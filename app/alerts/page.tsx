@@ -4,10 +4,10 @@ import { Topbar, Panel, StatusPill } from "@/components/ui";
 import { fmt, recommend } from "@/lib/data";
 
 export default function Alerts() {
-  const { snap, thresholds } = useStore();
+  const { snap, rows, thresholds } = useStore();
   if (!snap) return <div className="flex h-[70vh] items-center justify-center text-sub">Loading…</div>;
 
-  const alerting = snap.rows
+  const alerting = rows
     .filter((r) => r.status !== "Healthy" && r.status !== "No DRR")
     .sort((a, b) => (a.cover ?? (a.avail <= 0 ? -1 : 999)) - (b.cover ?? (b.avail <= 0 ? -1 : 999)));
 

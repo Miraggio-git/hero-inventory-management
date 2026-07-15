@@ -5,13 +5,13 @@ import { Topbar, Kpi, Panel, HealthStrip, StatusPill, FacStrip, facColor } from 
 import { fmt, lakh, recommend } from "@/lib/data";
 
 export default function Dashboard() {
-  const { snap, thresholds } = useStore();
+  const { snap, rows, thresholds } = useStore();
   if (!snap)
     return (
       <div className="flex h-[70vh] items-center justify-center text-sub">Loading inventory…</div>
     );
 
-  const rows = snap.rows;
+  
   const sellable = rows.reduce((s, r) => s + r.avail, 0);
   const incoming = rows.reduce((s, r) => s + r.incoming, 0);
   const held = rows.reduce((s, r) => s + r.blocked + r.bad, 0);

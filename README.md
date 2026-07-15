@@ -3,11 +3,20 @@
 Hero-SKU replenishment monitor. Reads live inventory from Supabase, computes days of cover
 (sellable units ÷ DRR), and raises alerts when any hero SKU drops below the 20-day buffer.
 
-## Pages
+## Modules
+- **Login** — role-based demo access: admin / supply_chain / fulfillment (password "miraggio"), role-gated navigation
 - **Dashboard** — network summary, health strip, replenishment queue, facility breakdown
 - **Inventory** — all 55 hero SKUs, search / status chips / facility filter, master–detail pane
-- **Alerts** — every SKU under the buffer, ordered by urgency, with a recommended action
-- **Settings** — editable thresholds (alert 20d / replenish 15d / critical 5d) + connection status
+- **Replenishment orders** — auto-created when cover drops below the alert buffer; qty = DRR × 20 − sellable;
+  priority tiers (Emergency/Critical/High/Watch); Approve → sends to Fulfillment; Code 128 barcode per SKU
+- **Fulfillment** — task queue from approved orders: Start → receive units → Mark completed (stock & cover update live)
+- **Barcode scan** — stripped handheld screen: Stock IN/OUT → Ready to scan (Zebra DataWedge keyboard-wedge
+  compatible, or type the SKU) → review → confirm; adjusts stock at the chosen facility
+- **Alerts** — every SKU under the buffer, ordered by urgency + notifications bell on every page
+- **Settings** — thresholds, team members, data-source status, setup SQL
+
+Operational state (orders, tasks, scan adjustments, session) persists in the browser via localStorage —
+demo-grade by design. Phase 2 moves it into Supabase tables.
 
 ## Data sources (Supabase project `tqiwfytpenogsxblkvja`)
 - `inventory_live` — synced daily 9 AM from Azure (already exists)

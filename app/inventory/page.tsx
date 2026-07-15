@@ -8,7 +8,7 @@ const CHIP_ORDER: (Status | "All")[] = ["All", "Stock-out", "Critical", "Repleni
 type SortKey = "rank" | "sku" | "avail" | "cover" | "incoming";
 
 export default function Inventory() {
-  const { snap, thresholds } = useStore();
+  const { snap, rows, thresholds } = useStore();
   const [q, setQ] = useState("");
   const [chip, setChip] = useState<Status | "All">("All");
   const [fac, setFac] = useState("");
@@ -16,7 +16,7 @@ export default function Inventory() {
   const [asc, setAsc] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
 
-  const rows = snap?.rows ?? [];
+  
   const counts = useMemo(() => {
     const c: Record<string, number> = { All: rows.length };
     for (const r of rows) c[r.status] = (c[r.status] || 0) + 1;
