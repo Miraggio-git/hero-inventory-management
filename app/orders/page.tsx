@@ -118,25 +118,52 @@ export default function Orders() {
             {filtered.length === 0 && (
               <li className="px-6 py-12 text-center text-[13px] text-sub">No orders here — everything is above the buffer.</li>
             )}
-            {filtered.map((o) => (
-              <li key={o.id} onClick={() => setSel(o.id === sel ? null : o.id)}
-                className={`flex cursor-pointer items-center gap-4 px-5 py-3.5 transition-colors ${sel === o.id ? "bg-brand-soft/60" : "hover:bg-gray-50/70"}`}>
-                <div className="w-20 font-mono text-[12px] text-sub">{o.id}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-[13px] font-semibold">{o.sku}</div>
-                  <div className="mt-0.5 truncate text-[11.5px] text-sub">{o.reason}</div>
-                </div>
-                <div className="w-20 text-right">
-                  <div className="text-[14px] font-bold">{o.qty !== null ? fmt(o.qty) : "—"}</div>
-                  <div className="text-[10.5px] text-sub">units</div>
-                </div>
-                <PriorityPill p={o.priority} />
-                <span className={`w-24 text-right text-[11.5px] font-semibold ${
-                  o.status === "Open" ? "text-sky-600" : o.status === "In Progress" ? "text-watch" : o.status === "Completed" ? "text-ok" : "text-gray-400"}`}>
-                  {o.status}
-                </span>
-              </li>
-            ))}
+            {filtered.map((o) => {
+              const orderRow = rows.find((r) => r.sku === o.sku);
+              const orderSources = orderRow
+                ? facilities.map((f) => {
+                    const units = orderRow.fac[f] || 0;
+                    const dailyShare = orderRow.drr ? orderRow.drr / Math.max(1, facilities.length) : null;
+                    const coverF = dailyShare ? units / dailyShare : null;
+                    const tag: "Surplus" | "OK" | "Low" | "None" = units === 0
+                      ? "None"
+                      : coverF !== null && coverF >= thresholds.alert * 1.5
+                      ? "Surplus"
+                      : coverF !== null && coverF < thresholds.replenish
+                      ? "Low"
+                      : units <= 2
+                      ? "Low"
+                      : units >= Math.max(5, orderRow.avail * 0.6)
+                      ? "Surplus"
+                      : "OK";
+                    return { f, units, tag };
+                  }).filter((x) => x.tag === "Surplus" || (x.tag === "OK" && x.units > 0))
+                : [];
+              const hasCreateSO = orderSources.length > 0;
+              return (
+                <li key={o.id} onClick={() => setSel(o.id === sel ? null : o.id)}
+                  className={`flex cursor-pointer items-center gap-4 px-5 py-3.5 transition-colors ${sel === o.id ? "bg-brand-soft/60" : "hover:bg-gray-50/70"}`}>
+                  <div className="w-20 font-mono text-[12px] text-sub">{o.id}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-[13px] font-semibold">{o.sku}</div>
+                    <div className="mt-0.5 truncate text-[11.5px] text-sub">{o.reason}</div>
+                  </div>
+                  <div className="w-20 text-right">
+                    <div className="text-[14px] font-bold">{o.qty !== null ? fmt(o.qty) : "—"}</div>
+                    <div className="text-[10.5px] text-sub">units</div>
+                  </div>
+                  <PriorityPill p={o.priority} />
+                  <span className={`w-24 text-right text-[11.5px] font-semibold ${
+                    o.status === "Open" ? "text-sky-600" : o.status === "In Progress" ? "text-watch" : o.status === "Completed" ? "text-ok" : "text-gray-400"}`}>
+                    {o.status}
+                  </span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSel(o.id); }}
+                    className="rounded-full border border-line bg-white px-3 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100">
+                    {hasCreateSO ? "Create SO" : "View"}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
           <div className="border-t border-line px-5 py-3 text-[12px] text-sub">{filtered.length} of {orders.length} orders</div>
         </Panel>
