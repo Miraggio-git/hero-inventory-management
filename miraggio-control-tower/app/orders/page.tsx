@@ -90,7 +90,7 @@ export default function Orders() {
     <>
       <Topbar
         title="Replenishment orders"
-        sub={`Auto-created when a hero SKU drops below ${thresholds.alert} days of cover. Click a row for warehouse comparison and to raise a stock-transfer SO.`}
+        sub={`Auto-created when a hero SKU drops below ${thresholds.alert} days of cover. Click any order row to open SKU details, compare warehouse stock, and create or approve a sales order.`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
@@ -121,7 +121,7 @@ export default function Orders() {
             {filtered.map((o) => (
               <li key={o.id} onClick={() => setSel(o.id === sel ? null : o.id)}
                 className={`flex cursor-pointer items-center gap-4 px-5 py-3.5 transition-colors ${sel === o.id ? "bg-brand-soft/60" : "hover:bg-gray-50/70"}`}>
-                <div className="w-20 font-mono text-[12px] text-sub">{o.id}</div>
+                <div className="w-24 font-mono text-[12px] text-sub">{o.id}</div>
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-[13px] font-semibold">{o.sku}</div>
                   <div className="mt-0.5 truncate text-[11.5px] text-sub">{o.reason}</div>
@@ -146,7 +146,7 @@ export default function Orders() {
             <div className="px-6 py-14 text-center">
               <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-lg text-gray-400">⟳</div>
               <div className="text-[14px] font-semibold">Select an order</div>
-              <p className="mt-1 text-[12.5px] text-sub">Warehouse comparison, transfer source and Create SO live here.</p>
+              <p className="mt-1 text-[12.5px] text-sub">Click any row to view warehouse availability, source-to-destination recommendations, and create or approve the sales order.</p>
             </div>
           ) : (
             <div className="px-5 py-4">
@@ -176,67 +176,87 @@ export default function Orders() {
                 </div>
               )}
 
-              {/* warehouse comparison: who is thin, who can supply */}
               {row && (
-                <div className="mt-4">
-                  <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Warehouse comparison</div>
-                  <ul className="space-y-1.5">
+                <div className="mt-4 rounded-3xl border border-line bg-white/90 p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sub">Warehouse health</div>
+                      <div className="mt-1 text-[15px] font-semibold text-ink">Where stock is low and where it can come from</div>
+                    </div>
+                    <div className="rounded-full bg-brand/10 px-3 py-1 text-[11px] font-semibold text-brand">Click row to open SKU details</div>
+                  </div>
+                  <ul className="space-y-2">
                     {facView.map(({ f, units, tag }) => (
-                      <li key={f} className="flex items-center justify-between gap-2 text-[12px]">
-                        <span className="flex min-w-0 items-center gap-2 font-mono text-gray-700">
+                      <li key={f} className="flex items-center justify-between gap-3 rounded-2xl border border-line/80 bg-slate-50 px-3 py-3 text-[12px]">
+                        <span className="flex items-center gap-2 font-mono text-gray-800">
                           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
-                          <span className="truncate">{f}</span>
+                          <span>{f}</span>
                         </span>
-                        <span className="flex items-center gap-2">
-                          <span className="font-semibold">{fmt(units)}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            tag === "Surplus" ? "bg-ok-bg text-ok"
-                            : tag === "OK" ? "bg-gray-100 text-gray-600"
-                            : tag === "Low" ? "bg-low-bg text-low"
-                            : "bg-crit-bg text-crit"}`}>
-                            {tag === "None" ? "No stock" : tag}
-                          </span>
+                        <span className="text-sub">{fmt(units)} units</span>
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                          tag === "Surplus" ? "bg-ok-bg text-ok" : tag === "OK" ? "bg-gray-100 text-gray-700" : tag === "Low" ? "bg-low-bg text-low" : "bg-crit-bg text-crit"}`}>
+                          {tag === "None" ? "No stock" : tag}
                         </span>
                       </li>
                     ))}
                   </ul>
                   {thin.length > 0 && sources.length > 0 && (
-                    <p className="mt-2 text-[11.5px] leading-snug text-sub">
-                      <strong className="text-ink">{sources[0].f}</strong> holds the most stock ({fmt(sources[0].units)} units) —
-                      transfer from there to <strong className="text-ink">{thin.map((t) => t.f).join(", ")}</strong>.
-                    </p>
+                    <div className="mt-4 rounded-2xl bg-brand-soft px-4 py-3 text-[12px] text-ink">
+                      <div className="font-semibold">Recommended transfer</div>
+                      <p className="mt-1 leading-relaxed text-gray-700">
+                        Transfer inventory from <strong>{sources[0].f}</strong> ({fmt(sources[0].units)} units available) to help <strong>{thin.map((t) => t.f).join(", ")}</strong> meet demand.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* Create SO: raise a stock transfer from a warehouse that has the SKU */}
-              {row && sources.length > 0 && selected.status !== "Completed" && selected.status !== "Resolved" && (
-                <div className="mt-4 rounded-lg border border-line bg-gray-50/70 px-3.5 py-3">
-                  <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Raise stock transfer (SO)</div>
-                  <div className="mt-2 flex items-center gap-2 text-[12px]">
-                    <span className="text-sub">Send to</span>
-                    <select value={dest || defaultDest} onChange={(e) => setDest(e.target.value)}
-                      className="flex-1 rounded-lg border border-line bg-white px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-brand">
-                      {facilities.map((f) => <option key={f} value={f}>{f}{thin.some((t) => t.f === f) ? " · low" : ""}</option>)}
-                    </select>
+              {row && (
+                <div className="mt-4 rounded-3xl border border-line bg-slate-50 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Create sales order (SO)</div>
+                      <div className="mt-1 text-[15px] font-semibold text-ink">Raise an inter-warehouse transfer for this SKU</div>
+                    </div>
+                    <div className="rounded-full bg-brand/10 px-3 py-1 text-[11px] font-semibold text-brand">Replenishment → Sales order</div>
                   </div>
-                  <ul className="mt-2.5 space-y-2">
-                    {sources.filter((s) => s.f !== (dest || defaultDest)).map(({ f, units }) => (
-                      <li key={f} className="flex items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-gray-700">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
-                          <span className="truncate">{f}</span>
-                          <span className="text-sub">· {fmt(units)}</span>
-                        </span>
-                        <button onClick={() => handleCreateSO(f, units)}
-                          className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-[11.5px] font-bold text-white hover:opacity-90">
-                          Create SO
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+
+                  {sources.length > 0 ? (
+                    <>
+                      <div className="mb-3 flex items-center gap-2 text-[12px]">
+                        <span className="text-sub">Destination</span>
+                        <select value={dest || defaultDest} onChange={(e) => setDest(e.target.value)}
+                          className="flex-1 rounded-lg border border-line bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-brand">
+                          {facilities.map((f) => (
+                            <option key={f} value={f}>{f}{thin.some((t) => t.f === f) ? " · low" : ""}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        {sources.filter((s) => s.f !== (dest || defaultDest)).map(({ f, units }) => (
+                          <div key={f} className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-white px-3 py-3 text-[12px]">
+                            <div>
+                              <div className="font-semibold">{f}</div>
+                              <div className="text-sub">{fmt(units)} units available</div>
+                            </div>
+                            <button onClick={() => handleCreateSO(f, units)}
+                              className="rounded-lg bg-brand px-4 py-2 text-[12px] font-semibold text-white hover:bg-brand-dark">
+                              Create SO
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">
+                      No source warehouse currently has available stock for this SKU. Approve replenishment or restock before creating an SO.
+                    </div>
+                  )}
+
                   {existingSOs.length > 0 && !createdSO && (
-                    <p className="mt-2 text-[11px] text-sub">{existingSOs.length} open SO already exists for this SKU — see Fulfillment.</p>
+                    <div className="mt-3 rounded-2xl border border-line bg-white px-3 py-3 text-[12px] text-gray-700">
+                      {existingSOs.length} open SO already exists for this SKU — check Fulfillment to manage the transfer.
+                    </div>
                   )}
                 </div>
               )}
