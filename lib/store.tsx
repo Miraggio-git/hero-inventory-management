@@ -6,14 +6,13 @@ import {
 } from "./data";
 
 /* ---------------- types ---------------- */
-export type RoleId = "admin" | "supply_chain" | "fulfillment";
-export type Session = { name: string; email: string; role: RoleId };
+export type Session = { name: string; email: string };
 
-export const DEMO_USERS: (Session & { password: string })[] = [
-  { name: "Priya Sharma", email: "admin@miraggio.com", password: "miraggio", role: "admin" },
-  { name: "Rahul Mehta", email: "supply@miraggio.com", password: "miraggio", role: "supply_chain" },
-  { name: "Anita Desai", email: "fulfillment@miraggio.com", password: "miraggio", role: "fulfillment" },
-];
+export const DEMO_USER = {
+  name: "Rahul Mehta",
+  email: "supply@miraggio.com",
+  password: "miraggio",
+};
 
 export type OrderStatus = "Open" | "In Progress" | "Completed" | "Resolved";
 export type Priority = "Emergency" | "Critical" | "High" | "Watch";
@@ -44,10 +43,24 @@ export type Task = {
   completedAt?: string;
 };
 
+// Sales order: an inter-warehouse stock transfer raised from a replenishment order.
+export type SO = {
+  id: string;           // SO-1001
+  orderId?: string;     // originating RO, if any
+  sku: string;
+  qty: number;
+  fromFac: string;      // source warehouse (has surplus)
+  toFac: string;        // destination warehouse (low / critical)
+  received: number;
+  status: "Open" | "In Progress" | "Completed";
+  createdAt: string;
+  completedAt?: string;
+};
+
 type Adj = Record<string, Record<string, number>>; // sku -> facility -> delta units
 
-type Ops = { orders: Order[]; tasks: Task[]; adj: Adj; seq: number };
-const EMPTY_OPS: Ops = { orders: [], tasks: [], adj: {}, seq: 1000 };
+type Ops = { orders: Order[]; tasks: Task[]; sos: SO[]; adj: Adj; seq: number };
+const EMPTY_OPS: Ops = { orders: [], tasks: [], sos: [], adj: {}, seq: 1000 };
 
 /* ---------------- store ---------------- */
 type Store = {
@@ -66,7 +79,11 @@ type Store = {
   // ops
   orders: Order[];
   tasks: Task[];
+  sos: SO[];
   approveOrder: (id: string) => void;
+  createSO: (sku: string, fromFac: string, toFac: string, qty: number, orderId?: string) => string; // returns SO id
+  startSO: (id: string) => void;
+  receiveSO: (id: string, units: number) => void;
   startTask: (id: string) => void;
   receiveTask: (id: string, units: number) => void;
   completeTask: (id: string) => void;
@@ -187,10 +204,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------------- actions ---------------- */
   const signIn = (email: string, password: string): string | null => {
-    const u = DEMO_USERS.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
-    if (!u || u.password !== password) return "Invalid email or password.";
-    const s = { name: u.name, email: u.email, role: u.role };
-    setSession(s);
+    const ok =
+      email.trim().toLowerCase() === DEMO_USER.email.toLowerCase() &&
+      password === DEMO_USER.password;
+    if (!ok) return "Invalid email or password.";
+    setSession({ name: DEMO_USER.name, email: DEMO_USER.email });
     return null;
   };
   const signOut = () => { setSession(null); localStorage.removeItem("mct-session"); };
@@ -212,6 +230,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const applyAdj = (adj: Adj, sku: string, fac: string, delta: number): Adj => ({
     ...adj, [sku]: { ...(adj[sku] || {}), [fac]: ((adj[sku] || {})[fac] || 0) + delta },
   });
+
+  /* ----- sales orders (inter-warehouse transfers) ----- */
+  const createSO = (sku: string, fromFac: string, toFac: string, qty: number, orderId?: string): string => {
+    let id = "";
+    setOps((p) => {
+      const seq = p.seq + 1;
+      id = `SO-${seq}`;
+      const so: SO = {
+        id, orderId, sku, qty: Math.max(1, Math.round(qty)),
+        fromFac, toFac, received: 0, status: "Open",
+        createdAt: new Date().toISOString(),
+      };
+      return { ...p, sos: [so, ...p.sos], seq };
+    });
+    return id;
+  };
+
+  const startSO = (id: string) =>
+    setOps((p) => ({ ...p, sos: p.sos.map((s) => (s.id === id && s.status === "Open" ? { ...s, status: "In Progress" } : s)) }));
+
+  // Receiving against an SO moves stock: out of the source, into the destination.
+  // When the full qty has been received the SO auto-completes — inventory is replenished.
+  const receiveSO = (id: string, units: number) =>
+    setOps((p) => {
+      const s = p.sos.find((x) => x.id === id);
+      if (!s || units <= 0 || s.status === "Completed") return p;
+      const take = Math.min(units, Math.max(0, s.qty - s.received));
+      if (take <= 0) return p;
+      let adj = applyAdj(p.adj, s.sku, s.fromFac, -take);
+      adj = applyAdj(adj, s.sku, s.toFac, take);
+      const received = s.received + take;
+      const done = received >= s.qty;
+      const now = new Date().toISOString();
+      return {
+        ...p,
+        adj,
+        sos: p.sos.map((x) =>
+          x.id === id
+            ? { ...x, received, status: done ? "Completed" : "In Progress", completedAt: done ? now : x.completedAt }
+            : x
+        ),
+        orders: done && s.orderId
+          ? p.orders.map((o) => (o.id === s.orderId && o.status !== "Completed" ? { ...o, status: "Completed", completedAt: now } : o))
+          : p.orders,
+      };
+    });
+
 
   const receiveTask = (id: string, units: number) =>
     setOps((p) => {
@@ -254,8 +319,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => ({
       snap, rows, loading, thresholds, setThresholds, refresh, lastSync,
       session, authReady, signIn, signOut,
-      orders: ops.orders, tasks: ops.tasks,
-      approveOrder, startTask, receiveTask, completeTask, scanAdjust, markAlertsRead, unreadCount,
+      orders: ops.orders, tasks: ops.tasks, sos: ops.sos,
+      approveOrder, createSO, startSO, receiveSO, startTask, receiveTask, completeTask, scanAdjust, markAlertsRead, unreadCount,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snap, rows, loading, thresholds, lastSync, session, authReady, ops]

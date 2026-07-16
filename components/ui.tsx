@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useStore, type RoleId } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import type { Row, Status } from "@/lib/data";
 import { fmt } from "@/lib/data";
 
@@ -36,21 +36,16 @@ export function PriorityPill({ p }: { p: "Emergency" | "Critical" | "High" | "Wa
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${map[p]}`}>{p}</span>;
 }
 
-/* ---------- navigation / roles ---------- */
-const NAV: { href: string; label: string; icon: string; roles: RoleId[] }[] = [
-  { href: "/", label: "Dashboard", icon: "▦", roles: ["admin", "supply_chain"] },
-  { href: "/inventory", label: "Inventory", icon: "◈", roles: ["admin", "supply_chain"] },
-  { href: "/orders", label: "Replenishment", icon: "⟳", roles: ["admin", "supply_chain"] },
-  { href: "/fulfillment", label: "Fulfillment", icon: "▤", roles: ["admin", "supply_chain", "fulfillment"] },
-  { href: "/scan", label: "Barcode Scan", icon: "⌗", roles: ["admin", "supply_chain", "fulfillment"] },
-  { href: "/alerts", label: "Alerts", icon: "◉", roles: ["admin", "supply_chain"] },
-  { href: "/settings", label: "Settings", icon: "⚙", roles: ["admin"] },
+/* ---------- navigation ---------- */
+const NAV: { href: string; label: string; icon: string }[] = [
+  { href: "/", label: "Dashboard", icon: "▦" },
+  { href: "/inventory", label: "Inventory", icon: "◈" },
+  { href: "/orders", label: "Replenishment", icon: "⟳" },
+  { href: "/fulfillment", label: "Fulfillment", icon: "▤" },
+  { href: "/scan", label: "Barcode Scan", icon: "⌗" },
+  { href: "/alerts", label: "Alerts", icon: "◉" },
+  { href: "/settings", label: "Settings", icon: "⚙" },
 ];
-
-export const ROLE_LABEL: Record<RoleId, string> = {
-  admin: "ADMIN", supply_chain: "SUPPLY CHAIN", fulfillment: "FULFILLMENT",
-};
-export const roleHome = (r: RoleId) => (r === "fulfillment" ? "/fulfillment" : "/");
 
 /* ---------- auth gate ---------- */
 export function Gate({ children }: { children: React.ReactNode }) {
@@ -63,11 +58,7 @@ export function Gate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!authReady) return;
     if (!session && !isPublic) router.replace("/login");
-    if (session && isPublic) router.replace(roleHome(session.role));
-    if (session && !isPublic) {
-      const item = NAV.find((n) => n.href === path);
-      if (item && !item.roles.includes(session.role)) router.replace(roleHome(session.role));
-    }
+    if (session && isPublic) router.replace("/");
   }, [authReady, session, path, isPublic, router]);
 
   if (!authReady) return <div className="flex h-screen items-center justify-center text-sub">Loading…</div>;
@@ -105,7 +96,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="mt-2 flex flex-col gap-1 px-3">
-        {NAV.filter((n) => n.roles.includes(session.role)).map((n) => {
+        {NAV.map((n) => {
           const active = path === n.href;
           const b = badge(n.href);
           return (
@@ -128,7 +119,7 @@ export function Sidebar() {
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sub">Signed in</div>
           <div className="mt-1 text-[13.5px] font-bold">{session.name}</div>
           <div className="text-[11.5px] text-sub">{session.email}</div>
-          <div className="mt-0.5 text-[10px] font-bold tracking-[0.12em] text-gray-500">{ROLE_LABEL[session.role]}</div>
+          <div className="mt-0.5 text-[10px] font-bold tracking-[0.12em] text-gray-500">SUPPLY CHAIN</div>
           <button onClick={() => { signOut(); router.replace("/login"); }}
             className="mt-3 w-full rounded-lg border border-line bg-white py-2 text-[12px] font-semibold hover:bg-gray-50">
             Sign out
@@ -150,8 +141,6 @@ function Bell() {
     return () => document.removeEventListener("mousedown", h);
   }, []);
   const active = orders.filter((o) => o.status === "Open" || o.status === "In Progress").slice(0, 8);
-  const canSee = session?.role !== "fulfillment";
-  if (!canSee) return null;
   return (
     <div className="relative" ref={ref}>
       <button onClick={() => { setOpen(!open); if (!open) markAlertsRead(); }}

@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useStore, DEMO_USERS } from "@/lib/store";
-import { roleHome, ROLE_LABEL } from "@/components/ui";
+import { useStore, DEMO_USER } from "@/lib/store";
 
 export default function Login() {
   const { signIn } = useStore();
@@ -14,8 +13,7 @@ export default function Login() {
   const submit = () => {
     const e = signIn(email, password);
     if (e) return setErr(e);
-    const u = DEMO_USERS.find((x) => x.email.toLowerCase() === email.trim().toLowerCase())!;
-    router.replace(roleHome(u.role));
+    router.replace("/");
   };
 
   return (
@@ -29,21 +27,10 @@ export default function Login() {
 
         <div className="rounded-xl2 bg-white p-6 shadow-lg">
           <div className="text-[15px] font-bold">Sign in</div>
-          <p className="mt-0.5 text-[12px] text-sub">Demo access — pick a role or type the credentials.</p>
-
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {DEMO_USERS.map((u) => (
-              <button key={u.email}
-                onClick={() => { setEmail(u.email); setPassword(u.password); setErr(null); }}
-                className={`rounded-lg border px-2 py-2 text-[10px] font-bold tracking-wide transition-colors ${
-                  email === u.email ? "border-ink bg-ink text-white" : "border-line bg-white text-gray-600 hover:border-gray-300"}`}>
-                {ROLE_LABEL[u.role]}
-              </button>
-            ))}
-          </div>
+          <p className="mt-0.5 text-[12px] text-sub">One team, one login — full access to the control tower.</p>
 
           <label className="mt-4 block text-[11px] font-semibold uppercase tracking-[0.12em] text-sub">Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="admin@miraggio.com"
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="supply@miraggio.com"
             className="mt-1 w-full rounded-lg border border-line px-3.5 py-2.5 text-[13.5px] outline-none focus:border-brand focus:ring-2 focus:ring-brand/15" />
 
           <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.12em] text-sub">Password</label>
@@ -58,8 +45,13 @@ export default function Login() {
             Sign in
           </button>
 
+          <button onClick={() => { setEmail(DEMO_USER.email); setPassword(DEMO_USER.password); setErr(null); }}
+            className="mt-2 w-full rounded-lg border border-line bg-white py-2 text-[12px] font-semibold text-gray-600 hover:bg-gray-50">
+            Fill demo credentials
+          </button>
+
           <p className="mt-3 text-center text-[11px] text-gray-400">
-            admin / supply / fulfillment @miraggio.com · password “miraggio”
+            {DEMO_USER.email} · password “miraggio”
           </p>
         </div>
       </div>

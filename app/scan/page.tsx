@@ -62,9 +62,7 @@ export default function Scan() {
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sub">Warehouse floor · Miraggio</div>
           <h1 className="mt-1 text-[26px] font-bold tracking-tight">Barcode scan</h1>
         </div>
-        {session?.role === "fulfillment"
-          ? <Link href="/fulfillment" className="rounded-lg border border-line bg-white px-4 py-2 text-[12.5px] font-semibold hover:bg-gray-50">Tasks</Link>
-          : <Link href="/" className="rounded-lg border border-line bg-white px-4 py-2 text-[12.5px] font-semibold hover:bg-gray-50">Dashboard</Link>}
+        <Link href="/" className="rounded-lg border border-line bg-white px-4 py-2 text-[12.5px] font-semibold hover:bg-gray-50">Dashboard</Link>
       </div>
 
       <div className="mb-5 rounded-xl2 border border-sky-100 bg-sky-50 px-5 py-4 text-[13px] leading-relaxed text-sky-900">

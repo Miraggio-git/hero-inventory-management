@@ -1,6 +1,5 @@
 "use client";
-import { useStore, DEMO_USERS } from "@/lib/store";
-import { ROLE_LABEL } from "@/components/ui";
+import { useStore, DEMO_USER } from "@/lib/store";
 import { Topbar, Panel } from "@/components/ui";
 import { SUPABASE_URL } from "@/lib/data";
 
@@ -66,15 +65,13 @@ export default function Settings() {
 
         <Panel title="Team members">
           <ul className="divide-y divide-line">
-            {DEMO_USERS.map((u) => (
-              <li key={u.email} className="flex items-center justify-between px-5 py-3.5 text-[13px]">
-                <div>
-                  <div className="font-semibold">{u.name}</div>
-                  <div className="text-[12px] text-sub">{u.email}</div>
-                </div>
-                <span className="rounded-full bg-gray-100 px-3 py-1 text-[10.5px] font-bold tracking-wide text-gray-600">{ROLE_LABEL[u.role]}</span>
-              </li>
-            ))}
+            <li className="flex items-center justify-between px-5 py-3.5 text-[13px]">
+              <div>
+                <div className="font-semibold">{DEMO_USER.name}</div>
+                <div className="text-[12px] text-sub">{DEMO_USER.email}</div>
+              </div>
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-[10.5px] font-bold tracking-wide text-gray-600">TEAM LOGIN</span>
+            </li>
           </ul>
           <div className="border-t border-line px-5 py-3 text-[12px] text-sub">Demo access — shared password. Move to Supabase Auth before production.</div>
         </Panel>

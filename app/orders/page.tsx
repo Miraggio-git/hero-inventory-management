@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useStore, type Order } from "@/lib/store";
 import { Topbar, Panel, PriorityPill, StatusPill, facColor } from "@/components/ui";
-import { fmt } from "@/lib/data";
+import { fmt, lakh } from "@/lib/data";
 import JsBarcode from "jsbarcode";
 
 const CHIPS = ["All", "Open", "In Progress", "Completed", "Resolved"] as const;
@@ -20,10 +21,11 @@ function Barcode({ code }: { code: string }) {
 }
 
 export default function Orders() {
-  const { orders, rows, thresholds, approveOrder, session } = useStore();
+  const { orders, rows, snap, thresholds, approveOrder, createSO, sos } = useStore();
   const [chip, setChip] = useState<(typeof CHIPS)[number]>("All");
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
+  const [justCreated, setJustCreated] = useState<string | null>(null); // SO id just raised
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { All: orders.length };
@@ -40,16 +42,55 @@ export default function Orders() {
 
   const selected: Order | undefined = orders.find((o) => o.id === sel);
   const row = selected ? rows.find((r) => r.sku === selected.sku) : undefined;
-  const canApprove = session?.role === "admin" || session?.role === "supply_chain";
+  const facilities = snap?.facilities ?? [];
+
+  // Per-facility view for the selected SKU: how much each warehouse holds,
+  // whether it can spare stock, and which warehouses are thin.
+  const facView = useMemo(() => {
+    if (!row) return [];
+    const dailyShare = row.drr ? row.drr / Math.max(1, facilities.length) : null;
+    return facilities.map((f) => {
+      const units = row.fac[f] || 0;
+      const coverF = dailyShare ? units / dailyShare : null;
+      let tag: "Surplus" | "OK" | "Low" | "None";
+      if (units === 0) tag = "None";
+      else if (coverF !== null && coverF >= thresholds.alert * 1.5) tag = "Surplus";
+      else if (coverF !== null && coverF < thresholds.replenish) tag = "Low";
+      else if (units <= 2) tag = "Low";
+      else tag = units >= Math.max(5, row.avail * 0.6) ? "Surplus" : "OK";
+      return { f, units, tag };
+    }).sort((a, b) => b.units - a.units);
+  }, [row, facilities, thresholds]);
+
+  const thin = facView.filter((x) => x.tag === "Low" || x.tag === "None");
+  const sources = facView.filter((x) => x.tag === "Surplus" || (x.tag === "OK" && x.units > 0));
+  const defaultDest = thin.length ? thin[thin.length - 1].f : facilities[0];
+  const [dest, setDest] = useState<string>("");
+  useEffect(() => { setDest(""); setJustCreated(null); }, [sel]);
+
+  const existingSOs = selected ? sos.filter((s) => s.sku === selected.sku && s.status !== "Completed") : [];
+  const createdSO = justCreated ? sos.find((s) => s.id === justCreated) : undefined;
+
+  const canApprove = true; // single sign-in — everyone can approve
 
   const stockoutDate = (cover: number | null) =>
     cover === null ? "—" : new Date(Date.now() + cover * 86400000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+  const handleCreateSO = (fromFac: string, units: number) => {
+    if (!selected || !row) return;
+    const toFac = dest || defaultDest;
+    if (!toFac || toFac === fromFac) return;
+    const need = selected.qty !== null ? selected.qty : Math.max(1, Math.ceil(units / 2));
+    const qty = Math.max(1, Math.min(units, need));
+    const id = createSO(selected.sku, fromFac, toFac, qty, selected.id);
+    setJustCreated(id);
+  };
 
   return (
     <>
       <Topbar
         title="Replenishment orders"
-        sub={`Auto-created when a hero SKU drops below ${thresholds.alert} days of cover. Review, then approve to send to Fulfillment.`}
+        sub={`Auto-created when a hero SKU drops below ${thresholds.alert} days of cover. Click a row for warehouse comparison and to raise a stock-transfer SO.`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
@@ -105,7 +146,7 @@ export default function Orders() {
             <div className="px-6 py-14 text-center">
               <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-lg text-gray-400">⟳</div>
               <div className="text-[14px] font-semibold">Select an order</div>
-              <p className="mt-1 text-[12.5px] text-sub">Recommendation, stock context and approval live here.</p>
+              <p className="mt-1 text-[12.5px] text-sub">Warehouse comparison, transfer source and Create SO live here.</p>
             </div>
           ) : (
             <div className="px-5 py-4">
@@ -135,19 +176,99 @@ export default function Orders() {
                 </div>
               )}
 
-              {row && Object.keys(row.fac).length > 0 && (
+              {/* warehouse comparison: who is thin, who can supply */}
+              {row && (
                 <div className="mt-4">
-                  <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Current split</div>
-                  <ul className="space-y-1">
-                    {Object.entries(row.fac).sort((a, b) => b[1] - a[1]).map(([f, v]) => (
-                      <li key={f} className="flex items-center justify-between text-[12px]">
-                        <span className="flex items-center gap-2 font-mono text-gray-700">
-                          <span className="h-2 w-2 rounded-full" style={{ background: facColor(f) }} />{f}
+                  <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Warehouse comparison</div>
+                  <ul className="space-y-1.5">
+                    {facView.map(({ f, units, tag }) => (
+                      <li key={f} className="flex items-center justify-between gap-2 text-[12px]">
+                        <span className="flex min-w-0 items-center gap-2 font-mono text-gray-700">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
+                          <span className="truncate">{f}</span>
                         </span>
-                        <span className="font-semibold">{fmt(v)}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-semibold">{fmt(units)}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            tag === "Surplus" ? "bg-ok-bg text-ok"
+                            : tag === "OK" ? "bg-gray-100 text-gray-600"
+                            : tag === "Low" ? "bg-low-bg text-low"
+                            : "bg-crit-bg text-crit"}`}>
+                            {tag === "None" ? "No stock" : tag}
+                          </span>
+                        </span>
                       </li>
                     ))}
                   </ul>
+                  {thin.length > 0 && sources.length > 0 && (
+                    <p className="mt-2 text-[11.5px] leading-snug text-sub">
+                      <strong className="text-ink">{sources[0].f}</strong> holds the most stock ({fmt(sources[0].units)} units) —
+                      transfer from there to <strong className="text-ink">{thin.map((t) => t.f).join(", ")}</strong>.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Create SO: raise a stock transfer from a warehouse that has the SKU */}
+              {row && sources.length > 0 && selected.status !== "Completed" && selected.status !== "Resolved" && (
+                <div className="mt-4 rounded-lg border border-line bg-gray-50/70 px-3.5 py-3">
+                  <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Raise stock transfer (SO)</div>
+                  <div className="mt-2 flex items-center gap-2 text-[12px]">
+                    <span className="text-sub">Send to</span>
+                    <select value={dest || defaultDest} onChange={(e) => setDest(e.target.value)}
+                      className="flex-1 rounded-lg border border-line bg-white px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-brand">
+                      {facilities.map((f) => <option key={f} value={f}>{f}{thin.some((t) => t.f === f) ? " · low" : ""}</option>)}
+                    </select>
+                  </div>
+                  <ul className="mt-2.5 space-y-2">
+                    {sources.filter((s) => s.f !== (dest || defaultDest)).map(({ f, units }) => (
+                      <li key={f} className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-gray-700">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
+                          <span className="truncate">{f}</span>
+                          <span className="text-sub">· {fmt(units)}</span>
+                        </span>
+                        <button onClick={() => handleCreateSO(f, units)}
+                          className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-[11.5px] font-bold text-white hover:opacity-90">
+                          Create SO
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {existingSOs.length > 0 && !createdSO && (
+                    <p className="mt-2 text-[11px] text-sub">{existingSOs.length} open SO already exists for this SKU — see Fulfillment.</p>
+                  )}
+                </div>
+              )}
+
+              {/* SKU detail shown after Create SO — where the SKU is low/critical */}
+              {createdSO && row && (
+                <div className="mt-4 rounded-lg border border-brand/30 bg-brand-soft px-3.5 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-brand">SO created · SKU detail</div>
+                    <StatusPill s={row.status} />
+                  </div>
+                  <div className="mt-1.5 font-mono text-[14px] font-bold">{createdSO.id} · {row.sku}</div>
+                  <div className="mt-0.5 text-[11.5px] text-sub">Hero rank #{row.rank} · {lakh(row.sales)} lifetime sales</div>
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-gray-800">
+                    Transfer <strong>{fmt(createdSO.qty)} units</strong> of {row.sku} from{" "}
+                    <span className="font-mono font-semibold">{createdSO.fromFac}</span> →{" "}
+                    <span className="font-mono font-semibold">{createdSO.toFac}</span>.
+                  </p>
+                  <ul className="mt-2 space-y-1 text-[12px]">
+                    {facView.filter((x) => x.tag === "Low" || x.tag === "None").map(({ f, units, tag }) => (
+                      <li key={f} className="flex items-center justify-between">
+                        <span className="font-mono text-gray-700">{f}</span>
+                        <span className={`font-semibold ${tag === "None" ? "text-crit" : "text-low"}`}>
+                          {tag === "None" ? "0 · critical" : `${fmt(units)} · low`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href="/fulfillment"
+                    className="mt-3 block rounded-lg bg-ink py-2 text-center text-[12px] font-bold text-white hover:opacity-90">
+                    Track in Fulfillment →
+                  </Link>
                 </div>
               )}
 

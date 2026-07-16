@@ -10,8 +10,8 @@ const config: Config = {
         sub: "#6B7280",
         brand: { DEFAULT: "#4F46E5", soft: "#EEF0FE" },
         ok: { DEFAULT: "#16A34A", bg: "#E8F7EE" },
-        watch: { DEFAULT: "#D97706", bg: "#FdF3E1" },
-        low: { DEFAULT: "#EA580C", bg: "#FDEDE3" },
+        watch: { DEFAULT: "#2563EB", bg: "#E8EFFD" },
+        low: { DEFAULT: "#D97706", bg: "#FCF1DD" },
         crit: { DEFAULT: "#DC2626", bg: "#FCE9E9" }
       },
       fontFamily: { sans: ["'Inter Variable'", "Inter", "system-ui", "sans-serif"], mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"] },
