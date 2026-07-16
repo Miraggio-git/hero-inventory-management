@@ -39,6 +39,19 @@ export default function Inventory() {
   const facilities = snap?.facilities ?? [];
   const nCols = 7 + facilities.length;
 
+  // Per-warehouse rollup: total sellable units + how many SKUs sit in each.
+  const facSummary = useMemo(
+    () =>
+      facilities
+        .map((f) => ({
+          f,
+          units: rows.reduce((s, r) => s + (r.fac[f] || 0), 0),
+          skus: rows.reduce((s, r) => s + ((r.fac[f] || 0) > 0 ? 1 : 0), 0),
+        }))
+        .sort((a, b) => b.units - a.units),
+    [rows, facilities]
+  );
+
   const sortBtn = (k: SortKey, label: string, right = false) => (
     <button
       onClick={() => (sortKey === k ? setAsc(!asc) : (setSortKey(k), setAsc(true)))}
@@ -54,6 +67,31 @@ export default function Inventory() {
   return (
     <>
       <Topbar title="Inventory" sub="Every hero SKU across the network — warehouse-by-warehouse. Click a row to open the SKU detail right there." />
+
+      {/* warehouse rollup — units + SKUs held per warehouse */}
+      <Panel className="mb-4">
+        <div className="flex flex-wrap gap-x-8 gap-y-3 px-5 py-4">
+          {facSummary.map(({ f, units, skus }) => {
+            const active = fac === f;
+            return (
+              <button
+                key={f}
+                onClick={() => setFac(active ? "" : f)}
+                title={active ? "Clear filter" : `Show only SKUs stocked at ${f}`}
+                className={`flex items-center gap-2.5 rounded-lg px-2 py-1 text-left transition-colors ${active ? "bg-brand-soft" : "hover:bg-gray-50"}`}
+              >
+                <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: facColor(f) }} />
+                <span>
+                  <span className="block font-mono text-[12.5px] font-semibold text-gray-700">{f}</span>
+                  <span className="block text-[11px] text-sub">
+                    <strong className="text-ink">{fmt(units)}</strong> units · {skus} SKUs
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Panel>
 
       {/* controls */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
