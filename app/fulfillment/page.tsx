@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { Topbar, Panel, facColor } from "@/components/ui";
-import { fmt } from "@/lib/data";
+import { fmt, facilityLabel } from "@/lib/data";
 
 const CHIPS = ["Active", "Pending", "In Progress", "Completed"] as const;
 const SO_CHIPS = ["Active", "Open", "In Progress", "Completed"] as const;
@@ -158,7 +158,7 @@ export default function Fulfillment() {
                   </div>
                   <div className="w-44">
                     <div className="font-mono text-[13.5px] font-semibold">{t.sku}</div>
-                    <div className="mt-0.5 text-[11.5px] text-sub">receive at <span className="font-mono">{t.facility}</span></div>
+                    <div className="mt-0.5 text-[11.5px] text-sub">receive at <span className="font-semibold">{facilityLabel(t.facility)}</span></div>
                   </div>
                   <div className="flex-1">
                     <div className="mb-1 flex items-center justify-between text-[11.5px]">

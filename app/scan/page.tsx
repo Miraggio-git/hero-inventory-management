@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { StatusPill } from "@/components/ui";
-import { fmt } from "@/lib/data";
+import { fmt, facilityLabel, FACILITY_KEYS, type FacilityKey } from "@/lib/data";
 import JsBarcode from "jsbarcode";
 
 type Mode = "in" | "out";
@@ -17,8 +17,8 @@ export default function Scan() {
   const [code, setCode] = useState("");
   const [found, setFound] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
-  const [facility, setFacility] = useState("");
-  const [log, setLog] = useState<{ sku: string; qty: number; dir: Mode; fac: string; at: string }[]>([]);
+  const [facility, setFacility] = useState<FacilityKey | "">("");
+  const [log, setLog] = useState<{ sku: string; qty: number; dir: Mode; fac: FacilityKey; at: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -33,8 +33,8 @@ export default function Scan() {
   }, [found]);
   useEffect(() => {
     if (row) {
-      const top = Object.entries(row.fac).sort((a, b) => b[1] - a[1])[0];
-      setFacility(top ? top[0] : facilities[0] || "MG_BNG");
+      const top = [...row.facRows].sort((a, b) => b.avail - a.avail)[0];
+      setFacility(top && top.avail > 0 ? top.facility : facilities[0] ?? FACILITY_KEYS[0]);
     }
   }, [row, facilities]);
 
@@ -138,9 +138,9 @@ export default function Scan() {
             </div>
             <div>
               <label className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Facility</label>
-              <select value={facility} onChange={(e) => setFacility(e.target.value)}
+              <select value={facility} onChange={(e) => setFacility(e.target.value as FacilityKey)}
                 className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 font-mono text-[12.5px] outline-none focus:border-brand">
-                {facilities.map((f) => <option key={f} value={f}>{f}</option>)}
+                {facilities.map((f) => <option key={f} value={f}>{facilityLabel(f)} — {f}</option>)}
               </select>
             </div>
           </div>
@@ -165,7 +165,7 @@ export default function Scan() {
               <li key={i} className="flex items-center justify-between px-5 py-2.5 text-[12.5px]">
                 <span className="font-mono font-semibold">{l.sku}</span>
                 <span className={`font-bold ${l.dir === "in" ? "text-ok" : "text-crit"}`}>{l.dir === "in" ? "+" : "−"}{l.qty}</span>
-                <span className="font-mono text-[11px] text-sub">{l.fac}</span>
+                <span className="text-[11px] text-sub">{facilityLabel(l.fac)}</span>
                 <span className="text-[11px] text-sub">{l.at}</span>
               </li>
             ))}

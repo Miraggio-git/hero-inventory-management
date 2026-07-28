@@ -3,8 +3,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import type { Row, Status } from "@/lib/data";
-import { fmt } from "@/lib/data";
+import type { Row, Status, FacilityKey } from "@/lib/data";
+import { fmt, facilityAlerts, facilityLabel } from "@/lib/data";
 
 /* ---------- status styling ---------- */
 export const STATUS_META: Record<Status, { dot: string; text: string; bg: string; label: string }> = {
@@ -80,7 +80,7 @@ export function Sidebar() {
   const router = useRouter();
   if (!session) return null;
 
-  const alertCount = rows.filter((r) => r.status !== "Healthy" && r.status !== "No DRR").length;
+  const alertCount = facilityAlerts(rows).length; // one per (sku, facility) below buffer
   const taskCount = tasks.filter((t) => t.status !== "Completed").length;
   const openOrders = orders.filter((o) => o.status === "Open").length;
   const badge = (href: string) =>
@@ -219,25 +219,26 @@ export function Kpi({ label, value, note, tone }: { label: string; value: string
   );
 }
 
-export function HealthStrip({ rows }: { rows: Row[] }) {
+export function HealthStrip({ statuses }: { statuses: Status[] }) {
   const groups: { key: Status; cls: string }[] = [
     { key: "Healthy", cls: "bg-ok" }, { key: "Watch", cls: "bg-watch" },
     { key: "Replenish", cls: "bg-low" }, { key: "Critical", cls: "bg-crit" },
     { key: "Stock-out", cls: "bg-crit/70" }, { key: "No DRR", cls: "bg-gray-300" },
   ];
-  const total = rows.length || 1;
+  const total = statuses.length || 1;
+  const count = (k: Status) => statuses.filter((s) => s === k).length;
   return (
     <div>
       <div className="flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
         {groups.map((g) => {
-          const n = rows.filter((r) => r.status === g.key).length;
+          const n = count(g.key);
           if (!n) return null;
           return <div key={g.key} className={g.cls} style={{ width: `${(n / total) * 100}%` }} title={`${g.key}: ${n}`} />;
         })}
       </div>
       <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1.5">
         {groups.map((g) => {
-          const n = rows.filter((r) => r.status === g.key).length;
+          const n = count(g.key);
           if (!n) return null;
           return (
             <span key={g.key} className="flex items-center gap-1.5 text-[12px] text-gray-600">
@@ -250,19 +251,24 @@ export function HealthStrip({ rows }: { rows: Row[] }) {
   );
 }
 
-const FAC_COLORS: Record<string, string> = {
-  miraggiolife_luh: "#4F46E5", MG_BNG: "#0EA5E9", Miraggio_FRK: "#8B5CF6",
-  Miraggio_Mum: "#14B8A6", Zepto: "#F59E0B",
+const FAC_COLORS: Record<FacilityKey, string> = {
+  LUH: "#4F46E5", // Ludhiana
+  BLR: "#0EA5E9", // Bangalore
+  MUM: "#14B8A6", // Mumbai
 };
-export const facColor = (f: string) => FAC_COLORS[f] || "#94A3B8";
+export const facColor = (f: string) => FAC_COLORS[f as FacilityKey] || "#94A3B8";
 
 export function FacStrip({ r }: { r: Row }) {
   if (r.avail <= 0) return <div className="h-2 w-full max-w-[180px] rounded-full bg-gray-100" title="No sellable stock" />;
-  const segs = Object.entries(r.fac).sort((a, b) => b[1] - a[1]);
+  const segs = [...r.facRows].filter((f) => f.avail > 0).sort((a, b) => b.avail - a.avail);
   return (
     <div className="flex h-2 w-full max-w-[180px] overflow-hidden rounded-full bg-gray-100">
-      {segs.map(([f, v]) => (
-        <div key={f} style={{ width: `${(v / r.avail) * 100}%`, background: facColor(f) }} title={`${f}: ${fmt(v)}`} />
+      {segs.map((f) => (
+        <div
+          key={f.facility}
+          style={{ width: `${(f.avail / r.avail) * 100}%`, background: facColor(f.facility) }}
+          title={`${facilityLabel(f.facility)}: ${fmt(f.avail)}`}
+        />
       ))}
     </div>
   );

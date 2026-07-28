@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useStore, type Order } from "@/lib/store";
 import { Topbar, Panel, PriorityPill, StatusPill, facColor } from "@/components/ui";
-import { fmt, lakh } from "@/lib/data";
+import { fmt, lakh, facilityLabel, DRR_WINDOW_LABEL, type FacilityKey } from "@/lib/data";
 import JsBarcode from "jsbarcode";
 
 const CHIPS = ["All", "Open", "In Progress", "Completed", "Resolved"] as const;
@@ -44,28 +44,30 @@ export default function Orders() {
   const row = selected ? rows.find((r) => r.sku === selected.sku) : undefined;
   const facilities = snap?.facilities ?? [];
 
-  // Per-facility view for the selected SKU: how much each warehouse holds,
-  // whether it can spare stock, and which warehouses are thin.
+  // Per-facility view for the selected SKU: each warehouse against its OWN DRR.
   const facView = useMemo(() => {
     if (!row) return [];
-    const dailyShare = row.drr ? row.drr / Math.max(1, facilities.length) : null;
-    return facilities.map((f) => {
-      const units = row.fac[f] || 0;
-      const coverF = dailyShare ? units / dailyShare : null;
-      let tag: "Surplus" | "OK" | "Low" | "None";
-      if (units === 0) tag = "None";
-      else if (coverF !== null && coverF >= thresholds.alert * 1.5) tag = "Surplus";
-      else if (coverF !== null && coverF < thresholds.replenish) tag = "Low";
-      else if (units <= 2) tag = "Low";
-      else tag = units >= Math.max(5, row.avail * 0.6) ? "Surplus" : "OK";
-      return { f, units, tag };
-    }).sort((a, b) => b.units - a.units);
-  }, [row, facilities, thresholds]);
+    return [...row.facRows]
+      .map((fr) => {
+        let tag: "Surplus" | "OK" | "Low" | "None";
+        if (fr.avail === 0) tag = "None";
+        else if (fr.cover !== null && fr.cover >= thresholds.alert * 1.5) tag = "Surplus";
+        else if (fr.cover !== null && fr.cover < thresholds.replenish) tag = "Low";
+        else if (fr.cover !== null) tag = "OK";
+        // No DRR at this facility — fall back to relative holding size.
+        else if (fr.avail >= Math.max(5, row.avail * 0.6)) tag = "Surplus";
+        else if (fr.avail <= 2) tag = "Low";
+        else tag = "OK";
+        return { f: fr.facility, label: fr.label, units: fr.avail, cover: fr.cover, drr: fr.drr, tag };
+      })
+      .sort((a, b) => b.units - a.units);
+  }, [row, thresholds]);
 
   const thin = facView.filter((x) => x.tag === "Low" || x.tag === "None");
   const sources = facView.filter((x) => x.tag === "Surplus" || (x.tag === "OK" && x.units > 0));
-  const defaultDest = thin.length ? thin[thin.length - 1].f : facilities[0];
-  const [dest, setDest] = useState<string>("");
+  const defaultDest: FacilityKey | undefined =
+    selected?.facility ?? (thin.length ? thin[thin.length - 1].f : facilities[0]);
+  const [dest, setDest] = useState<FacilityKey | "">("");
   useEffect(() => { setDest(""); setJustCreated(null); }, [sel]);
 
   const existingSOs = selected ? sos.filter((s) => s.sku === selected.sku && s.status !== "Completed") : [];
@@ -76,7 +78,7 @@ export default function Orders() {
   const stockoutDate = (cover: number | null) =>
     cover === null ? "—" : new Date(Date.now() + cover * 86400000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
-  const handleCreateSO = (fromFac: string, units: number) => {
+  const handleCreateSO = (fromFac: FacilityKey, units: number) => {
     if (!selected || !row) return;
     const toFac = dest || defaultDest;
     if (!toFac || toFac === fromFac) return;
@@ -90,7 +92,7 @@ export default function Orders() {
     <>
       <Topbar
         title="Replenishment orders"
-        sub={`Auto-created when a hero SKU drops below ${thresholds.alert} days of cover. Click a row for warehouse comparison and to raise a stock-transfer SO.`}
+        sub={`One order per SKU per warehouse, auto-created when a facility drops below ${thresholds.alert} days of its own cover. Qty = facility DRR x ${thresholds.alert} - facility sellable.`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
@@ -120,23 +122,26 @@ export default function Orders() {
           {filtered.map((o) => {
             const orderRow = rows.find((r) => r.sku === o.sku);
             const orderSources = orderRow
-              ? facilities.map((f) => {
-                  const units = orderRow.fac[f] || 0;
-                  const dailyShare = orderRow.drr ? orderRow.drr / Math.max(1, facilities.length) : null;
-                  const coverF = dailyShare ? units / dailyShare : null;
-                  const tag: "Surplus" | "OK" | "Low" | "None" = units === 0
-                    ? "None"
-                    : coverF !== null && coverF >= thresholds.alert * 1.5
-                    ? "Surplus"
-                    : coverF !== null && coverF < thresholds.replenish
-                    ? "Low"
-                    : units <= 2
-                    ? "Low"
-                    : units >= Math.max(5, orderRow.avail * 0.6)
-                    ? "Surplus"
-                    : "OK";
-                  return { f, units, tag };
-                }).filter((x) => x.tag === "Surplus" || (x.tag === "OK" && x.units > 0))
+              ? orderRow.facRows
+                  .map((fr) => {
+                    const tag: "Surplus" | "OK" | "Low" | "None" =
+                      fr.avail === 0
+                        ? "None"
+                        : fr.cover !== null && fr.cover >= thresholds.alert * 1.5
+                        ? "Surplus"
+                        : fr.cover !== null && fr.cover < thresholds.replenish
+                        ? "Low"
+                        : fr.cover !== null
+                        ? "OK"
+                        : fr.avail >= Math.max(5, orderRow.avail * 0.6)
+                        ? "Surplus"
+                        : fr.avail <= 2
+                        ? "Low"
+                        : "OK";
+                    return { f: fr.facility, units: fr.avail, tag };
+                  })
+                  .filter((x) => x.f !== o.facility)
+                  .filter((x) => x.tag === "Surplus" || (x.tag === "OK" && x.units > 0))
               : [];
             const hasCreateSO = orderSources.length > 0;
             const isOpen = sel === o.id;
@@ -146,7 +151,13 @@ export default function Orders() {
                   className={`flex cursor-pointer items-center gap-4 px-5 py-3.5 transition-colors ${isOpen ? "bg-brand-soft/60" : "hover:bg-gray-50/70"}`}>
                   <div className="w-20 font-mono text-[12px] text-sub">{o.id}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-mono text-[13px] font-semibold">{o.sku}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[13px] font-semibold">{o.sku}</span>
+                      <span className="flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] font-semibold text-gray-700">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: facColor(o.facility) }} />
+                        {facilityLabel(o.facility)}
+                      </span>
+                    </div>
                     <div className="mt-0.5 truncate text-[11.5px] text-sub">{o.reason}</div>
                   </div>
                   <div className="w-20 text-right">
@@ -172,6 +183,10 @@ export default function Orders() {
                         <div>
                           <div className="font-mono text-[12px] text-sub">{selected.id}</div>
                           <div className="font-mono text-[16px] font-bold">{selected.sku}</div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-sub">
+                            <span className="h-2 w-2 rounded-full" style={{ background: facColor(selected.facility) }} />
+                            Short at <strong className="text-ink">{facilityLabel(selected.facility)}</strong>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <PriorityPill p={selected.priority} />
@@ -187,14 +202,17 @@ export default function Orders() {
                         <div>
                           {row && (
                             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                              {[
-                                ["Sellable now", fmt(row.avail)],
-                                ["Cover", row.cover !== null ? `${row.cover.toFixed(1)} days` : "no DRR"],
-                                ["DRR", row.drr ? `${row.drr}/day` : "—"],
-                                ["Expected stock-out", stockoutDate(row.cover)],
-                                ["Recommended qty", selected.qty !== null ? `${fmt(selected.qty)} units` : "set manually"],
-                                ["Incoming", fmt(row.incoming)],
-                              ].map(([l, v]) => (
+                              {(() => {
+                                const fr = row.facRows.find((x) => x.facility === selected.facility);
+                                return [
+                                  [`Sellable at ${facilityLabel(selected.facility)}`, fmt(fr?.avail ?? 0)],
+                                  ["Cover here", fr && fr.cover !== null ? `${fr.cover.toFixed(1)} days` : "no DRR"],
+                                  [`DRR here (${DRR_WINDOW_LABEL})`, fr?.drr ? `${fr.drr}/day` : "—"],
+                                  ["Expected stock-out", stockoutDate(fr?.cover ?? null)],
+                                  ["Recommended qty", selected.qty !== null ? `${fmt(selected.qty)} units` : "set manually"],
+                                  ["Network sellable", fmt(row.avail)],
+                                ] as [string, string][];
+                              })().map(([l, v]) => (
                                 <div key={l} className="rounded-lg bg-gray-50 px-3 py-2.5">
                                   <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-sub">{l}</div>
                                   <div className="mt-0.5 text-[14px] font-bold">{v}</div>
@@ -220,13 +238,15 @@ export default function Orders() {
                             <div>
                               <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Warehouse comparison</div>
                               <ul className="space-y-1.5">
-                                {facView.map(({ f, units, tag }) => (
+                                {facView.map(({ f, label, units, cover, tag }) => (
                                   <li key={f} className="flex items-center justify-between gap-2 text-[12px]">
-                                    <span className="flex min-w-0 items-center gap-2 font-mono text-gray-700">
+                                    <span className="flex min-w-0 items-center gap-2 text-gray-700">
                                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
-                                      <span className="truncate">{f}</span>
+                                      <span className="truncate">{label}</span>
+                                      {f === selected.facility && <span className="shrink-0 text-[10px] font-bold text-brand">THIS ORDER</span>}
                                     </span>
                                     <span className="flex items-center gap-2">
+                                      <span className="text-[11px] text-sub">{cover !== null ? `${cover.toFixed(1)}d` : "no DRR"}</span>
                                       <span className="font-semibold">{fmt(units)}</span>
                                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                                         tag === "Surplus" ? "bg-ok-bg text-ok"
@@ -241,8 +261,8 @@ export default function Orders() {
                               </ul>
                               {thin.length > 0 && sources.length > 0 && (
                                 <p className="mt-2 text-[11.5px] leading-snug text-sub">
-                                  <strong className="text-ink">{sources[0].f}</strong> holds the most stock ({fmt(sources[0].units)} units) —
-                                  transfer from there to <strong className="text-ink">{thin.map((t) => t.f).join(", ")}</strong>.
+                                  <strong className="text-ink">{sources[0].label}</strong> holds the most stock ({fmt(sources[0].units)} units) —
+                                  transfer from there to <strong className="text-ink">{thin.map((t) => t.label).join(", ")}</strong>.
                                 </p>
                               )}
                             </div>
@@ -254,17 +274,21 @@ export default function Orders() {
                               <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-sub">Raise stock transfer (SO)</div>
                               <div className="mt-2 flex items-center gap-2 text-[12px]">
                                 <span className="text-sub">Send to</span>
-                                <select value={dest || defaultDest} onChange={(e) => setDest(e.target.value)}
-                                  className="flex-1 rounded-lg border border-line bg-white px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-brand">
-                                  {facilities.map((f) => <option key={f} value={f}>{f}{thin.some((t) => t.f === f) ? " · low" : ""}</option>)}
+                                <select value={dest || defaultDest} onChange={(e) => setDest(e.target.value as FacilityKey)}
+                                  className="flex-1 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-brand">
+                                  {facilities.map((f) => (
+                                    <option key={f} value={f}>
+                                      {facilityLabel(f)}{f === selected.facility ? " · this order" : thin.some((t) => t.f === f) ? " · low" : ""}
+                                    </option>
+                                  ))}
                                 </select>
                               </div>
                               <ul className="mt-2.5 space-y-2">
-                                {sources.filter((s) => s.f !== (dest || defaultDest)).map(({ f, units }) => (
+                                {sources.filter((s) => s.f !== (dest || defaultDest)).map(({ f, label, units }) => (
                                   <li key={f} className="flex items-center justify-between gap-2">
-                                    <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-gray-700">
+                                    <span className="flex min-w-0 items-center gap-2 text-[12px] text-gray-700">
                                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: facColor(f) }} />
-                                      <span className="truncate">{f}</span>
+                                      <span className="truncate">{label}</span>
                                       <span className="text-sub">· {fmt(units)}</span>
                                     </span>
                                     <button onClick={() => handleCreateSO(f, units)}
@@ -291,13 +315,13 @@ export default function Orders() {
                               <div className="mt-0.5 text-[11.5px] text-sub">Hero rank #{row.rank} · {lakh(row.sales)} lifetime sales</div>
                               <p className="mt-2 text-[12.5px] leading-relaxed text-gray-800">
                                 Transfer <strong>{fmt(createdSO.qty)} units</strong> of {row.sku} from{" "}
-                                <span className="font-mono font-semibold">{createdSO.fromFac}</span> →{" "}
-                                <span className="font-mono font-semibold">{createdSO.toFac}</span>.
+                                <span className="font-semibold">{facilityLabel(createdSO.fromFac)}</span> →{" "}
+                                <span className="font-semibold">{facilityLabel(createdSO.toFac)}</span>.
                               </p>
                               <ul className="mt-2 space-y-1 text-[12px]">
-                                {facView.filter((x) => x.tag === "Low" || x.tag === "None").map(({ f, units, tag }) => (
+                                {facView.filter((x) => x.tag === "Low" || x.tag === "None").map(({ f, label, units, tag }) => (
                                   <li key={f} className="flex items-center justify-between">
-                                    <span className="font-mono text-gray-700">{f}</span>
+                                    <span className="text-gray-700">{label}</span>
                                     <span className={`font-semibold ${tag === "None" ? "text-crit" : "text-low"}`}>
                                       {tag === "None" ? "0 · critical" : `${fmt(units)} · low`}
                                     </span>
